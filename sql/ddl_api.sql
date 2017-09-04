@@ -12,6 +12,8 @@
 -- create_default_indexes - (Optional) Whether or not to create the default indexes
 -- if_not_exists - (Optional) Do not fail if table is already a hypertable
 -- partitioning_func - (Optional) The partitioning function to use for spatial partitioning
+-- chunk_target_size - (Optional) The target size for chunks (e.g., '1000MB')
+-- chunk_sizing_func - (Optional) A function to calculate the chunk time interval for new chunks
 CREATE OR REPLACE FUNCTION  create_hypertable(
     main_table              REGCLASS,
     time_column_name        NAME,
@@ -22,7 +24,9 @@ CREATE OR REPLACE FUNCTION  create_hypertable(
     chunk_time_interval     anyelement = NULL::bigint,
     create_default_indexes  BOOLEAN = TRUE,
     if_not_exists           BOOLEAN = FALSE,
-    partitioning_func       REGPROC = NULL
+    partitioning_func       REGPROC = NULL,
+    chunk_target_size       TEXT = NULL,
+    chunk_sizing_func       REGPROC = '_timescaledb_internal.calculate_chunk_interval'::regproc
 )
     RETURNS VOID LANGUAGE PLPGSQL VOLATILE
     SET search_path = '_timescaledb_catalog'
@@ -41,6 +45,7 @@ DECLARE
     chunk_time_interval_actual BIGINT;
     time_type                  REGTYPE;
     relowner                   OID;
+    chunk_target_size_bytes    BIGINT = NULL;
 BEGIN
     -- Early abort if lacking permissions
     PERFORM _timescaledb_internal.check_role(main_table);
@@ -99,6 +104,22 @@ BEGIN
     chunk_time_interval_actual := _timescaledb_internal.time_interval_specification_to_internal_with_default_time(
         time_type, chunk_time_interval, 'chunk_time_interval');
 
+    IF chunk_target_size IS NOT NULL THEN
+        chunk_target_size_bytes = _timescaledb_internal.convert_text_memory_amount_to_bytes(chunk_target_size);
+    END IF;
+
+    IF chunk_time_interval IS NULL AND time_type IN ('TIMESTAMP', 'TIMESTAMPTZ', 'DATE') THEN
+        -- If user requested adaptive chunk sizing, default to a short
+        -- 1 day chunk time interval. Integral types need to have
+        -- chunk_time_interval explicitly set.
+        IF chunk_sizing_func IS NOT NULL AND
+            chunk_sizing_func <> 0 AND
+            chunk_target_size_bytes IS NOT NULL AND
+            chunk_target_size_bytes > 0 THEN
+            chunk_time_interval_actual := _timescaledb_internal.interval_to_usec('1 day');
+        END IF;
+    END IF;
+
     BEGIN
         SELECT *
         INTO hypertable_row
@@ -114,7 +135,9 @@ BEGIN
             chunk_time_interval_actual,
             tablespace_name,
             create_default_indexes,
-            partitioning_func
+            partitioning_func,
+            chunk_sizing_func,
+            chunk_target_size_bytes
         );
     EXCEPTION
         WHEN unique_violation THEN
@@ -131,6 +154,16 @@ BEGIN
     END;
 END
 $BODY$;
+
+CREATE OR REPLACE FUNCTION  set_adaptive_chunk_sizing(
+    hypertable                     REGCLASS,
+    chunk_target_size              TEXT,
+    INOUT chunk_sizing_func        REGPROC = NULL,
+    OUT chunk_target_size          BIGINT
+)
+    AS '@MODULE_PATHNAME@', 'chunk_adaptive_set_chunk_sizing'
+    LANGUAGE C IMMUTABLE;
+
 
 -- Add a dimension (of partitioning) to a hypertable
 --
@@ -256,7 +289,7 @@ BEGIN
     END IF;
 
     PERFORM  _timescaledb_internal.drop_chunks_type_check(pg_typeof(older_than), table_name, schema_name);
-    SELECT _timescaledb_internal.time_to_internal(older_than, pg_typeof(older_than)) INTO older_than_internal;
+    SELECT _timescaledb_internal.time_to_internal(older_than) INTO older_than_internal;
     PERFORM _timescaledb_internal.drop_chunks_impl(older_than_internal, table_name, schema_name, cascade);
 END
 $BODY$;

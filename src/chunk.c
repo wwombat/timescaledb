@@ -215,6 +215,52 @@ do_dimension_alignment(ChunkScanCtx *scanctx, Chunk *chunk)
 }
 
 /*
+ * Calculate, and potentially set, a new chunk interval for an open dimension.
+ *
+ *
+ */
+static bool
+calculate_and_set_new_chunk_interval(Hypertable *ht)
+{
+	Hyperspace *hs = ht->space;
+	Dimension  *dim = NULL;
+	Datum		datum;
+	int64		chunk_interval;
+	int			i;
+
+	if (!OidIsValid(ht->chunk_sizing_func) ||
+		ht->fd.chunk_target_size <= 0)
+		return -1;
+
+	/* Find first open dimension */
+	for (i = 0; i < hs->num_dimensions; i++)
+	{
+		dim = &hs->dimensions[i];
+
+		if (IS_OPEN_DIMENSION(dim))
+			break;
+
+		dim = NULL;
+	}
+
+	/* Nothing to do if no open dimension */
+	if (NULL == dim)
+		return false;
+
+	datum = OidFunctionCall2(ht->chunk_sizing_func, dim->fd.id, ht->fd.chunk_target_size);
+	chunk_interval = DatumGetInt64(datum);
+
+	/* Check if the function didn't set and interval or nothing changed */
+	if (chunk_interval <= 0 || chunk_interval == dim->fd.interval_length)
+		return false;
+
+	/* Update the dimension */
+	dimension_update_chunk_interval(dim, chunk_interval);
+
+	return true;
+}
+
+/*
  * Resolve chunk collisions.
  *
  * After a chunk collision scan, this function is called for each chunk in the
@@ -448,6 +494,12 @@ chunk_create_after_lock(Hypertable *ht, Point *p, const char *schema, const char
 	Hypercube  *cube;
 	Chunk	   *chunk;
 
+	/*
+	 * If the user has set a function to adaptively set chunk intervals, call
+	 * that function here and set the new interval
+	 */
+	calculate_and_set_new_chunk_interval(ht);
+
 	/* Calculate the hypercube for a new chunk that covers the tuple's point */
 	cube = hypercube_calculate_from_point(hs, p);
 
@@ -533,6 +585,7 @@ chunk_create_stub(int32 id, int16 num_constraints)
 
 	return chunk;
 }
+
 
 static bool
 chunk_tuple_found(TupleInfo *ti, void *arg)
@@ -834,6 +887,7 @@ chunk_find(Hyperspace *hs, Point *p)
 
 	return chunk;
 }
+
 
 Chunk *
 chunk_copy(Chunk *chunk)

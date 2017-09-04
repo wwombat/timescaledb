@@ -8,6 +8,7 @@ set(SQL_FILES
   tables.sql
   permissions.sql
   chunk.sql
+  chunk_adaptive.sql
   ddl_internal.sql
   util_time.sql
   util_internal_table_ddl.sql

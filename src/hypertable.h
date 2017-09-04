@@ -16,6 +16,7 @@ typedef struct Hypertable
 {
 	FormData_hypertable fd;
 	Oid			main_table_relid;
+	Oid			chunk_sizing_func;
 	Hyperspace *space;
 	SubspaceStore *chunk_cache;
 } Hypertable;
@@ -31,5 +32,6 @@ extern Oid	hypertable_relid(RangeVar *rv);
 extern bool is_hypertable(Oid relid);
 extern bool hypertable_has_tablespace(Hypertable *ht, Oid tspc_oid);
 extern char *hypertable_select_tablespace(Hypertable *ht, Chunk *chunk);
+extern int	hypertable_update(Hypertable *ht);
 
 #endif   /* TIMESCALEDB_HYPERTABLE_H */

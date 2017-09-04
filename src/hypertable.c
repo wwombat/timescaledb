@@ -6,6 +6,7 @@
 #include <utils/builtins.h>
 #include <utils/acl.h>
 #include <nodes/memnodes.h>
+#include <nodes/value.h>
 #include <catalog/namespace.h>
 #include <commands/tablespace.h>
 #include <commands/dbcommands.h>
@@ -24,6 +25,7 @@
 #include "dimension_vector.h"
 #include "hypercube.h"
 #include "guc.h"
+#include "utils.h"
 
 static Oid
 rel_get_owner(Oid relid)
@@ -66,7 +68,6 @@ hypertable_permissions_check(Oid hypertable_oid, Oid userid)
 	return ownerid;
 }
 
-
 Hypertable *
 hypertable_from_tuple(HeapTuple tuple)
 {
@@ -79,6 +80,22 @@ hypertable_from_tuple(HeapTuple tuple)
 	h->main_table_relid = get_relname_relid(NameStr(h->fd.table_name), namespace_oid);
 	h->space = dimension_scan(h->fd.id, h->main_table_relid, h->fd.num_dimensions);
 	h->chunk_cache = subspace_store_init(h->space, CurrentMemoryContext, guc_max_cached_chunks_per_hypertable);
+
+	if (!heap_attisnull(tuple, Anum_hypertable_chunk_sizing_func_schema) &&
+		!heap_attisnull(tuple, Anum_hypertable_chunk_sizing_func_name))
+	{
+		FuncCandidateList func =
+		FuncnameGetCandidates(list_make2(makeString(NameStr(h->fd.chunk_sizing_func_schema)),
+						  makeString(NameStr(h->fd.chunk_sizing_func_name))),
+							  2, NIL, false, false, false);
+
+		if (NULL == func || NULL != func->next)
+			elog(ERROR, "Could not find the adaptive chunking function '%s.%s'",
+				 NameStr(h->fd.chunk_sizing_func_schema),
+				 NameStr(h->fd.chunk_sizing_func_name));
+
+		h->chunk_sizing_func = func->oid;
+	}
 
 	return h;
 }
@@ -165,36 +182,66 @@ hypertable_scan_limit_internal(ScanKeyData *scankey,
 static bool
 hypertable_tuple_update(TupleInfo *ti, void *data)
 {
-	HeapTuple	tuple = heap_copytuple(ti->tuple);
-	FormData_hypertable *form = (FormData_hypertable *) GETSTRUCT(tuple);
-	FormData_hypertable *update = data;
+	Hypertable *ht = data;
+	Datum		values[Natts_hypertable];
+	bool		nulls[Natts_hypertable];
+	HeapTuple	copy;
 	CatalogSecurityContext sec_ctx;
 
-	namecpy(&form->schema_name, &update->schema_name);
-	namecpy(&form->table_name, &update->table_name);
+	heap_deform_tuple(ti->tuple, ti->desc, values, nulls);
+
+	values[Anum_hypertable_schema_name - 1] = NameGetDatum(&ht->fd.schema_name);
+	values[Anum_hypertable_table_name - 1] = NameGetDatum(&ht->fd.table_name);
+	values[Anum_hypertable_associated_schema_name - 1] = NameGetDatum(&ht->fd.associated_schema_name);
+	values[Anum_hypertable_associated_table_prefix - 1] = NameGetDatum(&ht->fd.associated_table_prefix);
+	values[Anum_hypertable_num_dimensions - 1] = Int16GetDatum(ht->fd.num_dimensions);
+	values[Anum_hypertable_chunk_target_size - 1] = Int64GetDatum(ht->fd.chunk_target_size);
+
+	memset(nulls, 0, sizeof(nulls));
+
+	if (OidIsValid(ht->chunk_sizing_func))
+	{
+		Form_pg_proc procform = get_procform(ht->chunk_sizing_func);
+
+		namestrcpy(&ht->fd.chunk_sizing_func_schema, get_namespace_name(procform->pronamespace));
+		StrNCpy(ht->fd.chunk_sizing_func_name.data, NameStr(procform->proname), NAMEDATALEN);
+
+		values[Anum_hypertable_chunk_sizing_func_schema - 1] =
+			NameGetDatum(&ht->fd.chunk_sizing_func_schema);
+		values[Anum_hypertable_chunk_sizing_func_name - 1] =
+			NameGetDatum(&ht->fd.chunk_sizing_func_name);
+	}
+	else
+	{
+		nulls[Anum_hypertable_chunk_sizing_func_schema - 1] = true;
+		nulls[Anum_hypertable_chunk_sizing_func_name - 1] = true;
+	}
+
+	copy = heap_form_tuple(ti->desc, values, nulls);
+
 	catalog_become_owner(catalog_get(), &sec_ctx);
-	catalog_update(ti->scanrel, tuple);
+	catalog_update_tid(ti->scanrel, &ti->tuple->t_self, copy);
 	catalog_restore_user(&sec_ctx);
 
-	heap_freetuple(tuple);
+	heap_freetuple(copy);
 
 	return false;
 }
 
-static int
-hypertable_update_form(FormData_hypertable *update)
+int
+hypertable_update(Hypertable *ht)
 {
 	ScanKeyData scankey[1];
 
 	ScanKeyInit(&scankey[0], Anum_hypertable_pkey_idx_id,
 				BTEqualStrategyNumber, F_INT4EQ,
-				Int32GetDatum(update->id));
+				Int32GetDatum(ht->fd.id));
 
 	return hypertable_scan_limit_internal(scankey,
 										  1,
 										  HYPERTABLE_ID_INDEX,
 										  hypertable_tuple_update,
-										  update,
+										  ht,
 										  1,
 										  RowExclusiveLock);
 }
@@ -204,7 +251,7 @@ hypertable_set_name(Hypertable *ht, const char *newname)
 {
 	namestrcpy(&ht->fd.table_name, newname);
 
-	return hypertable_update_form(&ht->fd);
+	return hypertable_update(ht);
 }
 
 int
@@ -212,7 +259,7 @@ hypertable_set_schema(Hypertable *ht, const char *newname)
 {
 	namestrcpy(&ht->fd.schema_name, newname);
 
-	return hypertable_update_form(&ht->fd);
+	return hypertable_update(ht);
 }
 
 Chunk *

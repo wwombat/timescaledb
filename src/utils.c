@@ -1,14 +1,18 @@
 #include <postgres.h>
 #include <fmgr.h>
-#include <utils/datetime.h>
 #include <catalog/pg_type.h>
 #include <catalog/pg_trigger.h>
 #include <catalog/namespace.h>
-#include <utils/guc.h>
-#include <utils/date.h>
 #include <nodes/nodes.h>
 #include <nodes/makefuncs.h>
+#include <access/htup_details.h>
+#include <utils/datetime.h>
+#include <utils/guc.h>
+#include <utils/date.h>
+#include <utils/syscache.h>
 #include <utils/lsyscache.h>
+#include <utils/builtins.h>
+#include <unistd.h>
 
 #include "utils.h"
 #include "compat.h"
@@ -145,20 +149,8 @@ TS_FUNCTION_INFO_V1(time_to_internal);
 Datum
 time_to_internal(PG_FUNCTION_ARGS)
 {
-	Datum		val;
-	Oid			type;
-	int64		res;
-
-	if (PG_ARGISNULL(0))
-		PG_RETURN_NULL();
-
-	val = PG_GETARG_DATUM(0);
-	type = PG_GETARG_OID(1);
-
-	res = time_value_to_internal(val, type);
-	PG_RETURN_INT64(res);
+	PG_RETURN_INT64(time_value_to_internal(PG_GETARG_DATUM(0), get_fn_expr_argtype(fcinfo->flinfo, 0)));
 }
-
 
 /*	*/
 int64
@@ -381,4 +373,21 @@ date_bucket(PG_FUNCTION_ARGS)
 	converted_ts = DirectFunctionCall1(date_timestamp, PG_GETARG_DATUM(1));
 	bucketed = DirectFunctionCall2(timestamp_bucket, PG_GETARG_DATUM(0), converted_ts);
 	return DirectFunctionCall1(timestamp_date, bucketed);
+}
+
+Form_pg_proc
+get_procform(regproc func)
+{
+	HeapTuple	proctup,
+				copy;
+
+	proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(func));
+
+	if (!HeapTupleIsValid(proctup))
+		elog(ERROR, "cache lookup failed for function %u", func);
+
+	copy = heap_copytuple(proctup);
+	ReleaseSysCache(proctup);
+
+	return (Form_pg_proc) GETSTRUCT(copy);
 }

@@ -38,7 +38,9 @@ CREATE OR REPLACE FUNCTION _timescaledb_internal.create_hypertable(
     chunk_time_interval      BIGINT,
     tablespace               NAME,
     create_default_indexes   BOOLEAN,
-    partitioning_func        REGPROC
+    partitioning_func        REGPROC,
+    chunk_sizing_func        REGPROC,
+    chunk_target_size        BIGINT
 )
     RETURNS _timescaledb_catalog.hypertable LANGUAGE PLPGSQL VOLATILE
     SECURITY DEFINER AS
@@ -46,6 +48,8 @@ $BODY$
 DECLARE
     id                       INTEGER;
     hypertable_row           _timescaledb_catalog.hypertable;
+    chunk_sizing_func_schema NAME;
+    chunk_sizing_func_name   NAME;
 BEGIN
     PERFORM _timescaledb_internal.check_role(main_table);
 
@@ -74,12 +78,47 @@ BEGIN
         associated_table_prefix = format('_hyper_%s', id);
     END IF;
 
+    -- Settings for adaptive chunk sizing
+    IF chunk_target_size IS NULL THEN
+        chunk_target_size := 0;
+        chunk_sizing_func_name := NULL;
+        chunk_sizing_func_schema := NULL;
+    ELSE
+        IF chunk_sizing_func IS NOT NULL THEN
+           SELECT n.nspname, p.proname
+            INTO STRICT chunk_sizing_func_schema, chunk_sizing_func_name
+            FROM pg_proc p, pg_namespace n
+            WHERE p.oid = chunk_sizing_func
+            AND p.pronamespace = n.oid;
+
+            PERFORM _timescaledb_internal.validate_chunk_sizing_func(chunk_sizing_func);
+        END IF;
+
+        IF chunk_target_size = 0 THEN
+            chunk_target_size = _timescaledb_internal.calculate_initial_chunk_target_size();
+        END IF;
+    END IF;
+
     INSERT INTO _timescaledb_catalog.hypertable (
-        id, schema_name, table_name,
-        associated_schema_name, associated_table_prefix, num_dimensions)
+        id,
+        schema_name,
+        table_name,
+        associated_schema_name,
+        associated_table_prefix,
+        num_dimensions,
+        chunk_sizing_func_schema,
+        chunk_sizing_func_name,
+        chunk_target_size)
     VALUES (
-        id, schema_name, table_name,
-        associated_schema_name, associated_table_prefix, 1
+        id,
+        schema_name,
+        table_name,
+        associated_schema_name,
+        associated_table_prefix,
+        1,
+        chunk_sizing_func_schema,
+        chunk_sizing_func_name,
+        chunk_target_size
     )
     RETURNING * INTO hypertable_row;
 

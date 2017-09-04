@@ -12,6 +12,7 @@ ORDER BY proname;
              proname             
 ---------------------------------
  add_dimension
+ array_avg
  attach_tablespace
  chunk_relation_size
  chunk_relation_size_pretty
@@ -26,8 +27,9 @@ ORDER BY proname;
  indexes_relation_size
  indexes_relation_size_pretty
  last
+ set_adaptive_chunk_sizing
  set_chunk_time_interval
  show_tablespaces
  time_bucket
-(18 rows)
+(20 rows)
 

@@ -395,6 +395,14 @@ dimension_update_name(Dimension *dim, const char *newname)
 	return dimension_scan_update(dim->fd.id, dimension_tuple_update, dim, RowExclusiveLock);
 }
 
+int
+dimension_update_chunk_interval(Dimension *dim, int64 chunk_interval)
+{
+	dim->fd.interval_length = chunk_interval;
+
+	return dimension_scan_update(dim->fd.id, dimension_tuple_update, dim, RowExclusiveLock);
+}
+
 static Point *
 point_create(int16 num_dimensions)
 {

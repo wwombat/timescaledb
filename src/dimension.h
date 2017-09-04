@@ -73,6 +73,7 @@ extern Dimension *hyperspace_get_dimension_by_name(Hyperspace *hs, DimensionType
 extern DimensionVec *dimension_get_slices(Dimension *dim);
 extern int	dimension_update_type(Dimension *dim, Oid newtype);
 extern int	dimension_update_name(Dimension *dim, const char *newname);
+extern int	dimension_update_chunk_interval(Dimension *dim, int64 chunk_interval);
 
 #define hyperspace_get_open_dimension(space, i)				\
 	hyperspace_get_dimension(space, DIMENSION_TYPE_OPEN, i)

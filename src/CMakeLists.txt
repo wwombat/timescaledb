@@ -72,6 +72,7 @@ set(SOURCES
   cache_invalidate.c
   catalog.c
   chunk.c
+  chunk_adaptive.c
   chunk_constraint.c
   chunk_dispatch.c
   chunk_dispatch_info.c
