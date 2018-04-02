@@ -45,27 +45,35 @@ NumericArray pgArrayToNumericArray(ArrayType * array,
 	Assert(array);
 	Assert(agg_context);
 
+    /* result */
 	NumericArray	result;
 
-	int		number_of_dimensions = ARR_NDIM(array);
-	int	       *array_of_dim_lengths = ARR_DIMS(array);
+	int number_of_dimensions = 0;
+	int *array_of_dim_lengths = 0;
+	size_t length = 0;
+
+    /* for iterator creation */
+	int slice_ndim = 0;	/* iterate item by item */
+	ArrayMetaState *meta_state = NULL;
+	ArrayIterator iterator;
+
+	/* for iterating through array */
+	Datum value;
+	bool is_null = false;
+	int i = 0;
+	size_t actual_length = 0;
+
+    /* validate input */
+	number_of_dimensions = ARR_NDIM(array);
+	*array_of_dim_lengths = ARR_DIMS(array);
 	if (number_of_dimensions != 1) {
 		elog(ERROR, "median undefined on an array column");
 	}
-	size_t		length = array_of_dim_lengths[0];
+	length = array_of_dim_lengths[0];
 
 	result.data = MemoryContextAllocZero(*agg_context, length * sizeof(Numeric));
 
-	int		slice_ndim = 0;	/* iterate item by item */
-	ArrayMetaState *meta_state = NULL;
-	ArrayIterator	iterator
-	= array_create_iterator(array, slice_ndim, meta_state);
-
-	/* iterate through array */
-	Datum		value;
-	bool		is_null;
-	int		i = 0;
-	size_t		actual_length = 0;
+	iterator = array_create_iterator(array, slice_ndim, meta_state);
 	while (array_iterate(iterator, &value, &is_null)) {
 		result.data[i] = DatumGetNumeric(value);
 		++actual_length;

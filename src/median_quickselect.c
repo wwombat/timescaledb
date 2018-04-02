@@ -32,7 +32,7 @@ typedef Numeric QuickSelectType;
 
 static inline
 void
-swap(QuickSelectType * a, QuickSelectType * b)
+quickselect_swap(QuickSelectType * a, QuickSelectType * b)
 {
 	QuickSelectType	temp = *a;
 	*a = *b;
@@ -46,12 +46,15 @@ swap(QuickSelectType * a, QuickSelectType * b)
  * specified 'pivot_index.
  */
 static
-size_t partition(QuickSelectType * list,
+size_t quickselect_partition(QuickSelectType * list,
 		 size_t left, size_t right, size_t pivot_index) {
 	QuickSelectType	pivot_value = list[pivot_index];
-	swap(&list[pivot_index], &list[right]);
-	size_t		store_index = left;
-	for (size_t i = left; i < right; ++i) {
+	size_t store_index = left;
+    size_t i = 0;
+
+	quickselect_swap(&list[pivot_index], &list[right]);
+
+	for (i = left; i < right; ++i) {
 		if (TIMESCALE_MEDIAN_COMPARE(list[i], pivot_value) == -1) {
 			swap(&list[store_index], &list[i]);
 			++store_index;
@@ -67,17 +70,18 @@ size_t partition(QuickSelectType * list,
  * just one item, which is the median.
  */
 static
-QuickSelectType select(QuickSelectType * list, size_t arr_size) {
-	size_t		left = 0;
-	size_t		right = arr_size - 1;
-	size_t		k = ((arr_size - 1) / 2);	/* the median index */
+QuickSelectType quickselect_select(QuickSelectType * list, size_t arr_size) {
+	size_t left = 0;
+	size_t right = arr_size - 1;
+	size_t k = ((arr_size - 1) / 2);	/* the median index */
+    size_t pivot_index = 0;
 	for (;;) {
 		if (left == right) {
 			return list[left];
 		}
-		size_t		pivot_index = right - 1;
+		pivot_index = right - 1;
 		/* to do - randomly select value between left and right */
-		pivot_index = partition(list, left, right, pivot_index);
+		pivot_index = quickselect_partition(list, left, right, pivot_index);
 		if (k == pivot_index) {
 			return list[k];
 		} else if (k < pivot_index) {
@@ -100,7 +104,7 @@ median_numeric_quickselect(QuickSelectType * arr, size_t arr_size) {
 	if (arr_size == 1) {
 		return *arr;
 	}
-	return select(arr, arr_size);
+	return quickselect_select(arr, arr_size);
 }
 
 #undef TIMESCALE_MEDIAN_COMPARE
