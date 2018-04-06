@@ -24,10 +24,11 @@
  */
 
 /* a bare bones wrapper around an array of Numerics */
-typedef struct NumericArray {
+typedef struct NumericArray
+{
 	Size		size;
-	Numeric	       *data;
-}		NumericArray;
+	Numeric    *data;
+}			NumericArray;
 
 /*
  * Create a NumericArray allocated using the specified 'agg_context' from the
@@ -40,33 +41,35 @@ typedef struct NumericArray {
  * On error, this function will call elog(ERROR, ...)
  */
 static
-NumericArray pgArrayToNumericArray(ArrayType * array,
-				   MemoryContext * agg_context) {
+NumericArray pg_array_to_numeric_array(ArrayType *array,
+									   MemoryContext *agg_context)
+{
 	Assert(array);
 	Assert(agg_context);
 
-    /* result */
-	NumericArray	result;
+	/* result */
+	NumericArray result;
 
-	int number_of_dimensions = 0;
-	int *array_of_dim_lengths = 0;
-	size_t length = 0;
+	int			number_of_dimensions = 0;
+	int		   *array_of_dim_lengths = 0;
+	size_t		length = 0;
 
-    /* for iterator creation */
-	int slice_ndim = 0;	/* iterate item by item */
+	/* for iterator creation */
+	int			slice_ndim = 0; /* iterate item by item */
 	ArrayMetaState *meta_state = NULL;
 	ArrayIterator iterator;
 
 	/* for iterating through array */
-	Datum value;
-	bool is_null = false;
-	int i = 0;
-	size_t actual_length = 0;
+	Datum		value;
+	bool		is_null = false;
+	int			i = 0;
+	size_t		actual_length = 0;
 
-    /* validate input */
+	/* validate input */
 	number_of_dimensions = ARR_NDIM(array);
-	*array_of_dim_lengths = ARR_DIMS(array);
-	if (number_of_dimensions != 1) {
+	array_of_dim_lengths = ARR_DIMS(array);
+	if (number_of_dimensions != 1)
+	{
 		elog(ERROR, "median undefined on an array column");
 	}
 	length = array_of_dim_lengths[0];
@@ -74,7 +77,9 @@ NumericArray pgArrayToNumericArray(ArrayType * array,
 	result.data = MemoryContextAllocZero(*agg_context, length * sizeof(Numeric));
 
 	iterator = array_create_iterator(array, slice_ndim, meta_state);
-	while (array_iterate(iterator, &value, &is_null)) {
+
+	while (array_iterate(iterator, &value, &is_null))
+	{
 		result.data[i] = DatumGetNumeric(value);
 		++actual_length;
 		++i;
@@ -100,34 +105,38 @@ TS_FUNCTION_INFO_V1(median_numeric_finalfunc);
 Datum
 median_numeric_finalfunc(PG_FUNCTION_ARGS)
 {
-	MemoryContext	agg_context;
+	MemoryContext agg_context;
 	ArrayBuildState *state = NULL;
 	Datum		array_datum;
-	NumericArray	numeric_array = {0};
-	ArrayType      *array;
+	NumericArray numeric_array = {0};
+	ArrayType  *array;
 
 	Numeric		result = {0};
 
-	if (!AggCheckCallContext(fcinfo, &agg_context)) {
+	if (!AggCheckCallContext(fcinfo, &agg_context))
+	{
 		elog(ERROR, "timescale median_numeric_finalfunc called "
-		     "in non-aggregate context");
+			 "in non-aggregate context");
 	}
 
-	if (PG_ARGISNULL(0)) {
+	if (PG_ARGISNULL(0))
+	{
 		PG_RETURN_NULL();
 	}
 
 	state = (ArrayBuildState *) PG_GETARG_POINTER(0);
 
-	if (state == NULL) {
+	if (state == NULL)
+	{
 		PG_RETURN_NULL();
 	}
 
 	array_datum = makeArrayResult(state, agg_context);
 	array = DatumGetArrayTypeP(array_datum);
-	numeric_array = pgArrayToNumericArray(array, &agg_context);
+	numeric_array = pg_array_to_numeric_array(array, &agg_context);
 
-	if (numeric_array.size == 0) {
+	if (numeric_array.size == 0)
+	{
 		PG_RETURN_NULL();
 	}
 

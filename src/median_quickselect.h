@@ -12,6 +12,6 @@
 #include <postgres.h>
 #include <utils/numeric.h>
 
-extern Numeric median_numeric_quickselect(Numeric * arr, size_t arr_size);
+extern Numeric median_numeric_quickselect(Numeric *arr, size_t arr_size);
 
 #endif
