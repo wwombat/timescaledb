@@ -4,7 +4,7 @@
  *
  * https://en.wikipedia.org/wiki/Quickselect
  *
- * The typedef 'QuickSelectType' and macro 'TIMESCALE_MEDIAN_COMPARE' are in
+ * The typedef 'Datum' and macro 'TIMESCALE_MEDIAN_COMPARE' are in
  * place to lay the groundwork for refactoring this code to provide multiple
  * specializations for postgres datatypes: right now, only Numeric is
  * supported, which provides good generality, since all numeric types can be
@@ -18,23 +18,12 @@
 
 #include "median_quickselect.h"
 
-typedef Numeric QuickSelectType;
+typedef Datum Datum;
 
-/*
- * A function on two 'QuickSelectType' values 'a' and 'b': ---------- Match
- * a, b with | a is bigger than b  ->  1 | a is smaller than b -> -1 | a and
- * b are equal   ->  0 ----------
- */
-#define TIMESCALE_MEDIAN_COMPARE(a, b) \
-    DatumGetInt32(DirectFunctionCall2(numeric_cmp, \
-                                      NumericGetDatum(a), \
-                                      NumericGetDatum(b)))
-
-static inline
-void
-quickselect_swap(QuickSelectType * a, QuickSelectType * b)
+static inline void
+quickselect_swap(Datum * a, Datum * b)
 {
-	QuickSelectType temp = *a;
+	Datum temp = *a;
 
 	*a = *b;
 	*b = temp;
@@ -46,12 +35,13 @@ quickselect_swap(QuickSelectType * a, QuickSelectType * b)
  * at the specified 'pivot_index' and those greater than the item at the
  * specified 'pivot_index.
  */
-static
-size_t
-quickselect_partition(QuickSelectType * list,
-					  size_t left, size_t right, size_t pivot_index)
+static size_t
+quickselect_partition(Datum * list, size_t left, size_t right, 
+                      FmgrInfo * cmp_opr,
+                      Oid collation,
+                      size_t pivot_index)
 {
-	QuickSelectType pivot_value = list[pivot_index];
+	Datum pivot_value = list[pivot_index];
 	size_t		store_index = left;
 	size_t		i = 0;
 
@@ -59,7 +49,8 @@ quickselect_partition(QuickSelectType * list,
 
 	for (i = left; i < right; ++i)
 	{
-		if (TIMESCALE_MEDIAN_COMPARE(list[i], pivot_value) == -1)
+		if (DatumGetInt32(FunctionCall2Coll(cmp_opr, collation,
+                                            list[i], pivot_value)) < 0)
 		{
 			quickselect_swap(&list[store_index], &list[i]);
 			++store_index;
@@ -74,8 +65,11 @@ quickselect_partition(QuickSelectType * list,
  * half we know the median to be in, until the partition we are in is has
  * just one item, which is the median.
  */
-static
-QuickSelectType quickselect_select(QuickSelectType * list, size_t arr_size)
+static Datum
+quickselect_select(Datum * list,
+                   size_t arr_size,
+                   FmgrInfo * cmp_opr,
+                   Oid collation)
 {
 	size_t		left = 0;
 	size_t		right = arr_size - 1;
@@ -90,7 +84,9 @@ QuickSelectType quickselect_select(QuickSelectType * list, size_t arr_size)
 		}
 		pivot_index = right - 1;
 		/* to do - randomly select value between left and right */
-		pivot_index = quickselect_partition(list, left, right, pivot_index);
+		pivot_index = quickselect_partition(list, left, right,
+                                            cmp_opr, collation,
+                                            pivot_index);
 		if (k == pivot_index)
 		{
 			return list[k];
@@ -110,17 +106,17 @@ QuickSelectType quickselect_select(QuickSelectType * list, size_t arr_size)
  * Find the median in the specified 'arr' of 'arr_size'. NOTE: Partially
  * sorts 'arr' in the process of computing the median.
  */
-
-QuickSelectType
-median_numeric_quickselect(QuickSelectType * arr, size_t arr_size)
+Datum
+median_quickselect(Datum * arr, size_t arr_size,
+                    FmgrInfo * cmp_opr, Oid collation)
 {
 	Assert(arr != NULL);
 	Assert(arr_size > 0);
+    Assert(cmp_opr != NULL);
 	if (arr_size == 1)
 	{
 		return *arr;
 	}
-	return quickselect_select(arr, arr_size);
-}
 
-#undef TIMESCALE_MEDIAN_COMPARE
+    return quickselect_select(arr, arr_size, cmp_opr, collation);
+}

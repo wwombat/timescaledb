@@ -12,6 +12,11 @@
 #include <postgres.h>
 #include <utils/numeric.h>
 
-extern Numeric median_numeric_quickselect(Numeric *arr, size_t arr_size);
+/*
+ * Return the median of the specified array 'arr' of 'arr_size'.
+ * Asserts on invalid input (e.g., a null 'arr', or a 0-sized array).
+ */
+extern Datum median_quickselect(Datum *arr, size_t arr_size,
+                                FmgrInfo * cmp_opr, Oid collation);
 
 #endif

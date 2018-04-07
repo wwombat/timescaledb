@@ -5,6 +5,8 @@
 #include <catalog/pg_type.h>
 #include <utils/array.h>
 #include <utils/numeric.h>
+#include <utils/typcache.h>
+
 #include "nodes/makefuncs.h"
 #include "utils/lsyscache.h"
 
@@ -19,36 +21,38 @@
  * and simply provide a 'finalfunc' that computes the median given the
  * complete dataset.
  *
- * ---------- CREATE AGGREGATE avg (float8) ( sfunc = array_append, stype =
- * anyarray, finalfunc = median_numeric_finalfunc ); ----------
+ * ---------- 
+ * CREATE AGGREGATE avg (float8) 
+ * ( 
+ *     sfunc = array_append,
+ *     stype = anyarray,
+ *     finalfunc = medianfinalfunc
+ * );
+ * ----------
  */
 
 /* a bare bones wrapper around an array of Numerics */
-typedef struct NumericArray
+typedef struct DatumCArray
 {
-	Size		size;
-	Numeric    *data;
-}			NumericArray;
+	Size size;
+	Datum *data;
+} DatumCArray;
 
 /*
- * Create a NumericArray allocated using the specified 'agg_context' from the
+ * Create a DatumCArray allocated using the specified 'agg_context' from the
  * specified 'array', IGNORING any null values.
- *
- * This function relies on the fact that 'array' is filled with Datums that
- * contain Numeric values. To call it with any other array is undefined
- * behavior.
  *
  * On error, this function will call elog(ERROR, ...)
  */
 static
-NumericArray pg_array_to_numeric_array(ArrayType *array,
-									   MemoryContext *agg_context)
+DatumCArray pg_array_to_c_array(ArrayType *array,
+									  MemoryContext *agg_context)
 {
 	Assert(array);
 	Assert(agg_context);
 
 	/* result */
-	NumericArray result;
+	DatumCArray result;
 
 	int			number_of_dimensions = 0;
 	int		   *array_of_dim_lengths = 0;
@@ -74,13 +78,13 @@ NumericArray pg_array_to_numeric_array(ArrayType *array,
 	}
 	length = array_of_dim_lengths[0];
 
-	result.data = MemoryContextAllocZero(*agg_context, length * sizeof(Numeric));
+	result.data = MemoryContextAllocZero(*agg_context, length * sizeof(Datum));
 
 	iterator = array_create_iterator(array, slice_ndim, meta_state);
 
 	while (array_iterate(iterator, &value, &is_null))
 	{
-		result.data[i] = DatumGetNumeric(value);
+		result.data[i] = value;
 		++actual_length;
 		++i;
 	}
@@ -101,21 +105,27 @@ NumericArray pg_array_to_numeric_array(ArrayType *array,
  * Uses the Quickselect algorithm, taking O(N) on average, O(N^2) in the
  * worst case.
  */
-TS_FUNCTION_INFO_V1(median_numeric_finalfunc);
+TS_FUNCTION_INFO_V1(median_finalfunc);
 Datum
-median_numeric_finalfunc(PG_FUNCTION_ARGS)
+median_finalfunc(PG_FUNCTION_ARGS)
 {
-	MemoryContext agg_context;
+	MemoryContext   agg_context;
 	ArrayBuildState *state = NULL;
-	Datum		array_datum;
-	NumericArray numeric_array = {0};
-	ArrayType  *array;
+	Datum           array_datum;
+	DatumCArray     c_array = {0};
+	ArrayType       *array;
+    
+    /* For getting comparison operator */
+    Oid                     elem_type = 0;
+    TypeCacheEntry          *type_cache_entry = NULL;
+    Oid                     collation = PG_GET_COLLATION();
 
-	Numeric		result = {0};
+	Datum result = {0};
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 	{
-		elog(ERROR, "timescale median_numeric_finalfunc called "
+		elog(ERROR,
+             "timescale medianfinalfunc called "
 			 "in non-aggregate context");
 	}
 
@@ -133,14 +143,27 @@ median_numeric_finalfunc(PG_FUNCTION_ARGS)
 
 	array_datum = makeArrayResult(state, agg_context);
 	array = DatumGetArrayTypeP(array_datum);
-	numeric_array = pg_array_to_numeric_array(array, &agg_context);
 
-	if (numeric_array.size == 0)
+    /* fetch comparison operator */
+    elem_type = ARR_ELEMTYPE(array);
+    type_cache_entry = lookup_type_cache(elem_type, TYPECACHE_CMP_PROC_FINFO);
+    if (type_cache_entry->cmp_proc_finfo.fn_oid == InvalidOid)
+    {
+        elog(ERROR,
+             "could not find comparison function for type %u", elem_type);
+    }
+
+    /* create c array */
+	c_array = pg_array_to_c_array(array, &agg_context);
+
+	if (c_array.size == 0)
 	{
 		PG_RETURN_NULL();
 	}
 
-	result = median_numeric_quickselect(numeric_array.data, numeric_array.size);
+	result = median_quickselect(c_array.data, c_array.size,
+                                &type_cache_entry->cmp_proc_finfo,
+                                collation);
 
-	PG_RETURN_NUMERIC(result);
+	PG_RETURN_DATUM(result);
 }
