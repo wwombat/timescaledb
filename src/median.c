@@ -21,9 +21,9 @@
  * and simply provide a 'finalfunc' that computes the median given the
  * complete dataset.
  *
- * ---------- 
- * CREATE AGGREGATE avg (float8) 
- * ( 
+ * ----------
+ * CREATE AGGREGATE avg (float8)
+ * (
  *     sfunc = array_append,
  *     stype = anyarray,
  *     finalfunc = medianfinalfunc
@@ -34,9 +34,9 @@
 /* a bare bones wrapper around an array of Numerics */
 typedef struct DatumCArray
 {
-	Size size;
-	Datum *data;
-} DatumCArray;
+	Size		size;
+	Datum	   *data;
+}			DatumCArray;
 
 /*
  * Create a DatumCArray allocated using the specified 'agg_context' from the
@@ -46,7 +46,7 @@ typedef struct DatumCArray
  */
 static
 DatumCArray pg_array_to_c_array(ArrayType *array,
-									  MemoryContext *agg_context)
+								MemoryContext *agg_context)
 {
 	Assert(array);
 	Assert(agg_context);
@@ -109,23 +109,23 @@ TS_FUNCTION_INFO_V1(median_finalfunc);
 Datum
 median_finalfunc(PG_FUNCTION_ARGS)
 {
-	MemoryContext   agg_context;
+	MemoryContext agg_context;
 	ArrayBuildState *state = NULL;
-	Datum           array_datum;
-	DatumCArray     c_array = {0};
-	ArrayType       *array;
-    
-    /* For getting comparison operator */
-    Oid                     elem_type = 0;
-    TypeCacheEntry          *type_cache_entry = NULL;
-    Oid                     collation = PG_GET_COLLATION();
+	Datum		array_datum;
+	DatumCArray c_array = {0};
+	ArrayType  *array;
 
-	Datum result = {0};
+	/* For getting comparison operator */
+	Oid			elem_type = 0;
+	TypeCacheEntry *type_cache_entry = NULL;
+	Oid			collation = PG_GET_COLLATION();
+
+	Datum		result = {0};
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 	{
 		elog(ERROR,
-             "timescale medianfinalfunc called "
+			 "timescale medianfinalfunc called "
 			 "in non-aggregate context");
 	}
 
@@ -144,16 +144,16 @@ median_finalfunc(PG_FUNCTION_ARGS)
 	array_datum = makeArrayResult(state, agg_context);
 	array = DatumGetArrayTypeP(array_datum);
 
-    /* fetch comparison operator */
-    elem_type = ARR_ELEMTYPE(array);
-    type_cache_entry = lookup_type_cache(elem_type, TYPECACHE_CMP_PROC_FINFO);
-    if (type_cache_entry->cmp_proc_finfo.fn_oid == InvalidOid)
-    {
-        elog(ERROR,
-             "could not find comparison function for type %u", elem_type);
-    }
+	/* fetch comparison operator */
+	elem_type = ARR_ELEMTYPE(array);
+	type_cache_entry = lookup_type_cache(elem_type, TYPECACHE_CMP_PROC_FINFO);
+	if (type_cache_entry->cmp_proc_finfo.fn_oid == InvalidOid)
+	{
+		elog(ERROR,
+			 "could not find comparison function for type %u", elem_type);
+	}
 
-    /* create c array */
+	/* create c array */
 	c_array = pg_array_to_c_array(array, &agg_context);
 
 	if (c_array.size == 0)
@@ -162,8 +162,8 @@ median_finalfunc(PG_FUNCTION_ARGS)
 	}
 
 	result = median_quickselect(c_array.data, c_array.size,
-                                &type_cache_entry->cmp_proc_finfo,
-                                collation);
+								&type_cache_entry->cmp_proc_finfo,
+								collation);
 
 	PG_RETURN_DATUM(result);
 }

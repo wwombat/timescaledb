@@ -17,9 +17,9 @@
 typedef Datum Datum;
 
 static inline void
-quickselect_swap(Datum * a, Datum * b)
+quickselect_swap(Datum *a, Datum *b)
 {
-	Datum temp = *a;
+	Datum		temp = *a;
 
 	*a = *b;
 	*b = temp;
@@ -28,10 +28,10 @@ quickselect_swap(Datum * a, Datum * b)
 /*
  * Compare the two specified Datum 'a' and 'b' using 'cmp_opr' and 'collation'
  */
-static inline int 
-quickselect_compare(Datum a, Datum b, FmgrInfo * cmp_opr, Oid collation)
+static inline int
+quickselect_compare(Datum a, Datum b, FmgrInfo *cmp_opr, Oid collation)
 {
-    return DatumGetInt32(FunctionCall2Coll(cmp_opr, collation, a, b));
+	return DatumGetInt32(FunctionCall2Coll(cmp_opr, collation, a, b));
 }
 
 /*
@@ -41,12 +41,12 @@ quickselect_compare(Datum a, Datum b, FmgrInfo * cmp_opr, Oid collation)
  * specified 'pivot_index.
  */
 static size_t
-quickselect_partition(Datum * list, size_t left, size_t right, 
-                      FmgrInfo * cmp_opr,
-                      Oid collation,
-                      size_t pivot_index)
+quickselect_partition(Datum *list, size_t left, size_t right,
+					  FmgrInfo *cmp_opr,
+					  Oid collation,
+					  size_t pivot_index)
 {
-	Datum pivot_value = list[pivot_index];
+	Datum		pivot_value = list[pivot_index];
 	size_t		store_index = left;
 	size_t		i = 0;
 
@@ -72,25 +72,25 @@ quickselect_partition(Datum * list, size_t left, size_t right,
  */
 static size_t
 quickselect_brute_force_select(Datum *list, size_t left, size_t right,
-                               FmgrInfo *cmp_opr, Oid collation)
+							   FmgrInfo *cmp_opr, Oid collation)
 {
-    size_t i = left + 1;
-    size_t j = 0;
+	size_t		i = left + 1;
+	size_t		j = 0;
 
-    while (i < right)
-    {
-        j = i;
-        while ((j > left) &&
-               (quickselect_compare(list[j-1], list[j],
-                                    cmp_opr, collation) > 0))
-        {
-            quickselect_swap(&list[j], &list[j-1]);
-            --j;
-        }
-        ++i;
-    }
-    
-    return ((right - left) / 2);
+	while (i < right)
+	{
+		j = i;
+		while ((j > left) &&
+			   (quickselect_compare(list[j - 1], list[j],
+									cmp_opr, collation) > 0))
+		{
+			quickselect_swap(&list[j], &list[j - 1]);
+			--j;
+		}
+		++i;
+	}
+
+	return ((right - left) / 2);
 }
 
 /*
@@ -106,11 +106,10 @@ quickselect_get_pivot_random(size_t left, size_t right)
 */
 
 /* Forward declaration for quickselect_get_pivot_median_of_medians */
-static size_t
-quickselect_select(Datum * list,
-                   size_t arr_size,
-                   FmgrInfo * cmp_opr,
-                   Oid collation);
+static size_t quickselect_select(Datum *list,
+				   size_t arr_size,
+				   FmgrInfo *cmp_opr,
+				   Oid collation);
 
 /*
  * The "median of medians" algorithm - return a suitable pivot
@@ -118,75 +117,77 @@ quickselect_select(Datum * list,
  * by the indices 'left' and 'right'.
  */
 static size_t
-quickselect_get_pivot_median_of_medians(Datum * list, size_t left, size_t right,
-                                        FmgrInfo *cmp_opr, Oid collation)
+quickselect_get_pivot_median_of_medians(Datum *list, size_t left, size_t right,
+										FmgrInfo *cmp_opr, Oid collation)
 {
-    size_t sub_left     = 0;
-    size_t sub_right    = 0;
-    size_t median_index = 0;
-    size_t number_of_medians = 0;
+	size_t		sub_left = 0;
+	size_t		sub_right = 0;
+	size_t		median_index = 0;
+	size_t		number_of_medians = 0;
 
-    size_t len_subarray = 0;
+	size_t		len_subarray = 0;
 
-    Datum result = { 0 };
+	Datum		result = {0};
 
-    size_t i = 0;
+	size_t		i = 0;
 
-    Datum temp_array[5] = { 0 };
-    Datum *temp_medians = NULL;
+	Datum		temp_array[5] = {0};
+	Datum	   *temp_medians = NULL;
 
-    /* base case */
-    if ((right - left) <= 5)
-    {
-        len_subarray = right - left;
-        memcpy(temp_array, list + left, len_subarray * sizeof(Datum));
-        result = temp_array[quickselect_brute_force_select(temp_array, 0, len_subarray,
-                                                           cmp_opr, collation)];
-    }
+	/* base case */
+	if ((right - left) <= 5)
+	{
+		len_subarray = right - left;
+		memcpy(temp_array, list + left, len_subarray * sizeof(Datum));
+		result = temp_array[quickselect_brute_force_select(temp_array, 0, len_subarray,
+														   cmp_opr, collation)];
+	}
 
-    else
-    {
-        temp_medians = (Datum *) palloc(sizeof(Datum) * (((right - left) / 5) + 1));
+	else
+	{
+		temp_medians = (Datum *) palloc(sizeof(Datum) * (((right - left) / 5) + 1));
 
-        /* collect the medians of every group of 5 records
-         * and move them into temp_medians */
-        sub_left  = left;
-        number_of_medians = 0;
-        while (sub_right < right)
-        {
-            sub_right = sub_left + 4;
-            if (sub_right > right)
-            {
-                sub_right = right;
-            }
+		/*
+		 * collect the medians of every group of 5 records and move them into
+		 * temp_medians
+		 */
+		sub_left = left;
+		number_of_medians = 0;
+		while (sub_right < right)
+		{
+			sub_right = sub_left + 4;
+			if (sub_right > right)
+			{
+				sub_right = right;
+			}
 
-            len_subarray = sub_right - sub_left;
-            memcpy(temp_array, list + sub_left, len_subarray * sizeof(Datum));
-            median_index = quickselect_brute_force_select(temp_array, 0, len_subarray,
-                                                          cmp_opr, collation);
+			len_subarray = sub_right - sub_left;
+			memcpy(temp_array, list + sub_left, len_subarray * sizeof(Datum));
+			median_index = quickselect_brute_force_select(temp_array, 0, len_subarray,
+														  cmp_opr, collation);
 
-            temp_medians[number_of_medians] = temp_array[median_index];
+			temp_medians[number_of_medians] = temp_array[median_index];
 
-            ++number_of_medians;
-            sub_left += 5;
-        }
+			++number_of_medians;
+			sub_left += 5;
+		}
 
-        /* compute the medians of the medians... */
-        result = temp_medians[quickselect_select(temp_medians, number_of_medians,
-                                                 cmp_opr, collation)];
-        pfree(temp_medians);
-    }
+		/* compute the medians of the medians... */
+		result = temp_medians[quickselect_select(temp_medians, number_of_medians,
+												 cmp_opr, collation)];
+		pfree(temp_medians);
+	}
 
-    /* find index of median of medians... */
-    for (i = left; i < right; ++i)
-    {
-        if (quickselect_compare(list[i], result, cmp_opr, collation) == 0)
-        {
-            return i;
-        }
-    }
-    Assert(false);
-    return -1;
+	/* find index of median of medians... */
+	for (i = left; i < right; ++i)
+	{
+		if (quickselect_compare(list[i], result, cmp_opr, collation) == 0)
+		{
+			return i;
+		}
+	}
+	Assert(false);
+	return -1;
 }
 
 /*
@@ -195,10 +196,10 @@ quickselect_get_pivot_median_of_medians(Datum * list, size_t left, size_t right,
  * just one item, which is the median.
  */
 static size_t
-quickselect_select(Datum * list,
-                   size_t arr_size,
-                   FmgrInfo * cmp_opr,
-                   Oid collation)
+quickselect_select(Datum *list,
+				   size_t arr_size,
+				   FmgrInfo *cmp_opr,
+				   Oid collation)
 {
 	size_t		left = 0;
 	size_t		right = arr_size - 1;
@@ -211,12 +212,12 @@ quickselect_select(Datum * list,
 		{
 			return left;
 		}
-        /* pivot_index = quickselect_get_pivot_random(left, right); */
+		/* pivot_index = quickselect_get_pivot_random(left, right); */
 		pivot_index = quickselect_get_pivot_median_of_medians(list, left, right,
-                                                              cmp_opr, collation);
+															  cmp_opr, collation);
 		pivot_index = quickselect_partition(list, left, right,
-                                            cmp_opr, collation,
-                                            pivot_index);
+											cmp_opr, collation,
+											pivot_index);
 		if (k == pivot_index)
 		{
 			return k;
@@ -237,16 +238,16 @@ quickselect_select(Datum * list,
  * sorts 'arr' in the process of computing the median.
  */
 Datum
-median_quickselect(Datum * arr, size_t arr_size,
-                    FmgrInfo * cmp_opr, Oid collation)
+median_quickselect(Datum *arr, size_t arr_size,
+				   FmgrInfo *cmp_opr, Oid collation)
 {
 	Assert(arr != NULL);
 	Assert(arr_size > 0);
-    Assert(cmp_opr != NULL);
+	Assert(cmp_opr != NULL);
 	if (arr_size == 1)
 	{
 		return *arr;
 	}
 
-    return arr[quickselect_select(arr, arr_size, cmp_opr, collation)];
+	return arr[quickselect_select(arr, arr_size, cmp_opr, collation)];
 }

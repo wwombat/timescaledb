@@ -17,6 +17,6 @@
  * Asserts on invalid input (e.g., a null 'arr', or a 0-sized array).
  */
 extern Datum median_quickselect(Datum *arr, size_t arr_size,
-                                FmgrInfo * cmp_opr, Oid collation);
+				   FmgrInfo *cmp_opr, Oid collation);
 
 #endif
