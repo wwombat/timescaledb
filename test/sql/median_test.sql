@@ -48,7 +48,7 @@ INSERT INTO "mediantest_float" VALUES
     (15.123141),
     (-134141);
 -- ASCERTAIN
-SELECT median(val::numeric) FROM mediantest_float;
+SELECT median(val) FROM mediantest_float;
 
 -------------------------------------------
 -- Empty table.
@@ -56,7 +56,7 @@ SELECT median(val::numeric) FROM mediantest_float;
 -- ARRANGE
 CREATE TABLE "mediantest_empty"(val float);
 -- ASCERTAIN
-SELECT median(val::numeric) FROM mediantest_empty;
+SELECT median(val) FROM mediantest_empty;
 
 -------------------------------------------
 -- Gigantic odd table
@@ -64,9 +64,9 @@ SELECT median(val::numeric) FROM mediantest_empty;
 -- ARRANGE
 CREATE TABLE "mediantest_gigantic_odd"(val int);
 INSERT INTO mediantest_gigantic_odd (val)
-SELECT i FROM generate_series(0, 10001) as T(i);
+SELECT i FROM generate_series(0, 100001) as T(i);
 -- ASCERTAIN
-SELECT median(val::numeric) FROM mediantest_gigantic_odd;
+SELECT median(val) FROM mediantest_gigantic_odd;
 
 -------------------------------------------
 -- Gigantic even table
@@ -74,9 +74,9 @@ SELECT median(val::numeric) FROM mediantest_gigantic_odd;
 -- ARRANGE
 CREATE TABLE "mediantest_gigantic_even"(val int);
 INSERT INTO mediantest_gigantic_even (val)
-SELECT i FROM generate_series(0, 10000) as T(i);
+SELECT i FROM generate_series(0, 100000) as T(i);
 -- ASCERTAIN
-SELECT median(val::numeric) FROM mediantest_gigantic_even;
+SELECT median(val) FROM mediantest_gigantic_even;
 
 -------------------------------------------
 -- Multiple Selects
@@ -87,3 +87,24 @@ INSERT INTO mediantest_multiple (a, b)
 SELECT i, 1000000 - i FROM generate_series(0, 10000) as T(i);
 -- ASCERTAIN
 SELECT median(a), median(b) FROM mediantest_multiple;
+
+-------------------------------------------
+-- Strings
+-------------------------------------------
+-- ARRANGE
+CREATE TABLE "mediantest_text"(val text);
+INSERT INTO mediantest_text(val)
+SELECT i::text FROM generate_series(0, 100000) as T(i);
+-- ASCERTAIN
+SELECT median(val) FROM mediantest_text;
+
+-------------------------------------------
+-- Timestamp
+-------------------------------------------
+-- ARRANGE
+CREATE TABLE "mediantest_date"(val timestamp);
+INSERT INTO mediantest_date(val)
+SELECT TIMESTAMP 'epoch' + (i * INTERVAL '1 second')
+FROM generate_series(0, 100000) as T(i);
+-- ASCERTAIN
+SELECT median(val) FROM mediantest_date;
